@@ -7,8 +7,8 @@ from jose import jwt
 
 load_dotenv()
 
-SECRET_KEY = os.getenv("SECRET_KEY")
-ALGORITHM = os.getenv("ALGORITHM")
+SECRET_KEY = os.getenv("SECRET_KEY", 'super_key')
+ALGORITHM = os.getenv("ALGORITHM", 'HS256')
 
 def create_token(data:dict, expires_delta=60*2):
     try:

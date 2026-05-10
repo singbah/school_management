@@ -22,12 +22,16 @@ async def student_register(user:CreateStudent, request:Request, response:Respons
         now = datetime.now()
         if user.phone:
             validate_phone(user.phone)
+
         existing_user = await db.students.find_one({"$or":[{"email":user.email}, {"phone":user.phone}]})
+
         if existing_user:
+            print("User already exists with email or phone:", user.email, user.phone)
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="User with this email or phone already exists"
             )
+        
         hashed_password = set_password(user.password)
         user_dict = user.dict()
 
@@ -42,6 +46,7 @@ async def student_register(user:CreateStudent, request:Request, response:Respons
         return {"message":"User registered successfully"}
     
     except Exception as e:
+        print("Error during registration:", str(e)) 
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
@@ -54,8 +59,8 @@ async def student_login(login_data:StudentLogin, request:Request, response:Respo
         now = datetime.now()
         ip = request.client.host
         user = await db.students.find_one({"student_id": login_data.student_id})
-        print(user)
         if not user:
+            print("User not found with student_id:", login_data.student_id)
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="User not found"
@@ -110,7 +115,129 @@ async def student_login(login_data:StudentLogin, request:Request, response:Respo
         return {'detail':user}
 
     except Exception as e:
+        print("Error during login:", str(e))
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, 
+            detail=str(e)
+        )
+
+@user_auths_bp.post("/logout")
+async def student_logout(response:Response):
+    response.delete_cookie("access_token")
+    response.delete_cookie("refresh_token")
+    return {"message":"Logged out successfully"}
+
+@user_auths_bp.get("/me")
+async def get_current_user(request:Request):
+    try:
+        token = request.cookies.get("access_token")
+        if not token:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Not authenticated"
+            )
+        payload = verify_token(token)
+        student_id = payload.get("student_id")
+        user = await db.students.find_one({"student_id": student_id})
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+        user['_id'] = str(user["_id"])
+        return user
+    except Exception as e:
+        print("Error fetching current user:", str(e))
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+@user_auths_bp.post("/refresh")
+async def refresh_token(request:Request, response:Response):
+    try:
+        refresh_token = request.cookies.get("refresh_token")
+        if not refresh_token:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Refresh token missing"
+            )
+        payload = verify_token(refresh_token)
+        student_id = payload.get("student_id")
+        user = await db.students.find_one({"student_id": student_id})
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+        
+        token_data = {
+            "student_id": user["student_id"],
+            "email": user["email"],
+            'role': 'student'
+        }
+
+        new_access_token = create_token(token_data)
+        response.set_cookie(
+            key="access_token",
+            value=new_access_token,
+            httponly=True,
+            secure=True,
+            samesite="none",
+        )
+        return {"message":"Token refreshed successfully"}
+    except Exception as e:
+        print("Error refreshing token:", str(e))
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+@user_auths_bp.post("/forgot-password")
+async def forgot_password(request:Request, email:str=Query(...)):
+    try:
+        if not email:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="you didn't enter your email"
+            )
+        user = await db.students.find_one({"email": email})
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail='user not found with email'
+            )
+        
+        user['_id'] = str(user['_id'])
+        return user
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+@user_auths_bp.patch("/update")
+async def update_student(student_data:dict, request:Request):
+    try:
+        student_id = student_data.get("student_id")
+        db_user = await db.students.find_one({"student_id":student_id})
+        if not db_user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="user not found"
+            )
+        data_to_update = {}
+        db_user["_id"] = str(db_user["_id"])
+        for key, value in student_data.items():
+            if key in db_user.keys():
+                db_user[key] = value
+                data_to_update[key] = value
+
+        await db.students.update_one({"student_id":student_id},{"$set":data_to_update})
+
+        return {"detail":db_user}
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )

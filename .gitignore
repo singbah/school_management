@@ -1,4 +1,3 @@
+*__pycache__
 *school
-.env
-*__pycache__/
-*.pyc
+*.env
