@@ -14,7 +14,7 @@ def create_token(data:dict, expires_delta=60*2):
     try:
         to_encode = data.copy()
         if expires_delta:
-            expire = datetime.utcnow() + timedelta(seconds=expires_delta)
+            expire = datetime.utcnow() + timedelta(minutes=expires_delta)
             to_encode.update({"exp": expire})
         token = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
         return token

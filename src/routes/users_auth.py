@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 
 from src.database import db
 from src.schemas import CreateStudent, StudentLogin
-from src.routes.auths import set_password, verify_password
+from src.routes.auths import set_password, verify_password, send_email
 from src.routes.config.security import create_token, verify_token, validate_phone
 import uuid
 
@@ -112,6 +112,7 @@ async def student_login(login_data:StudentLogin, request:Request, response:Respo
         )
 
         user['_id'] = str(user["_id"])
+        user['password'] = None
         return {'detail':user}
 
     except Exception as e:
@@ -145,6 +146,7 @@ async def get_current_user(request:Request):
                 detail="User not found"
             )
         user['_id'] = str(user["_id"])
+        user['password'] = None
         return user
     except Exception as e:
         print("Error fetching current user:", str(e))
@@ -185,32 +187,12 @@ async def refresh_token(request:Request, response:Response):
             secure=True,
             samesite="none",
         )
-        return {"message":"Token refreshed successfully"}
-    except Exception as e:
-        print("Error refreshing token:", str(e))
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
-
-@user_auths_bp.post("/forgot-password")
-async def forgot_password(request:Request, email:str=Query(...)):
-    try:
-        if not email:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="you didn't enter your email"
-            )
-        user = await db.students.find_one({"email": email})
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail='user not found with email'
-            )
         
-        user['_id'] = str(user['_id'])
+        user['_id'] = str(user["_id"])
+        user["password"] = None
         return user
     except Exception as e:
+        print("Error refreshing token:", str(e))
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
@@ -239,5 +221,82 @@ async def update_student(student_data:dict, request:Request):
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+
+@user_auths_bp.post("/forgot-password")
+async def forgot_password(request:Request, email:str=Query(...)):
+    try:
+        if not email:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="you didn't enter your email"
+            )
+        user = await db.students.find_one({"email": email})
+        otp_code =uuid.uuid4().hex[0:6]
+        now = datetime.now()
+        ip = request.headers.get("host")
+        print(ip)
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail='user not found with email'
+            )
+        
+        OTPS = {
+            "email":user['email'],
+            "ip":ip,
+            'code':otp_code,
+            "created_at":now,
+            "expire_at":now + timedelta(minutes=5)
+            }
+        
+        await db.OPTS.insert_one(OTPS)
+
+        return {"detail":"Check your email for the OTP CODE"}
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+@user_auths_bp.patch("reset_password")
+async def check_otp(request:Request, response:Response, otp_code:str=Query(...), email:str=Query(...)):
+    try:
+        cursor = db.OPTS.find({"email":email}).sort({"created_at":-1}).limit(1)
+        otps = []
+        if not cursor:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Code Error"
+            )
+        async for code in cursor:
+            otps.append(code)
+
+        otp_ = otps[0]
+
+
+        if otp_.get("code") != otp_code.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Wrong Error"
+            )
+
+        if otp_.get("expire_at") > datetime.now() and otp_.get("code") == otp_code.strip():
+            reset_link = f'http://localhost:8000/user/password/reset?email={email}&&code={otp_code}'
+            msg = f"click the link below to reset password.\nthe link expire in 5 minutes\n{reset_link}"
+            
+            send_email("Password", email, msg, "User")
+            return {"detail":msg}
+        
+        if otp_['expire_at'] < datetime.now():
+            raise HTTPException(
+                status_code=status.HTTP_408_REQUEST_TIMEOUT,
+                detail="CODE EXPIRED"
+            )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_408_REQUEST_TIMEOUT,
             detail=str(e)
         )
