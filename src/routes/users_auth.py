@@ -1,14 +1,12 @@
-from fastapi import APIRouter, HTTPException, status, Request, Response, Form, UploadFile, File, Query
-from fastapi.responses import FileResponse
-import os
+from fastapi import APIRouter, HTTPException, status, Request, Response, Query
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
+import uuid
 
 from src.database import db
 from src.schemas import CreateStudent, StudentLogin
 from src.routes.auths import set_password, verify_password, send_email
 from src.routes.config.security import create_token, verify_token, validate_phone
-import uuid
 
 load_dotenv()
 MAX_ATTEMPTS = 5
@@ -224,7 +222,6 @@ async def update_student(student_data:dict, request:Request):
             detail=str(e)
         )
 
-
 @user_auths_bp.post("/forgot-password")
 async def forgot_password(request:Request, email:str=Query(...)):
     try:
@@ -252,6 +249,9 @@ async def forgot_password(request:Request, email:str=Query(...)):
             "expire_at":now + timedelta(minutes=5)
             }
         
+        reset_link = f'http://localhost:8000/user/password/reset?email={email}&&code={otp_code}'
+        msg = f"click the link below to reset password.\nthe link expire in 5 minutes\n{reset_link}"
+        await send_email("Password Reset", email, msg, "User")
         await db.OPTS.insert_one(OTPS)
 
         return {"detail":"Check your email for the OTP CODE"}
@@ -284,11 +284,7 @@ async def check_otp(request:Request, response:Response, otp_code:str=Query(...),
             )
 
         if otp_.get("expire_at") > datetime.now() and otp_.get("code") == otp_code.strip():
-            reset_link = f'http://localhost:8000/user/password/reset?email={email}&&code={otp_code}'
-            msg = f"click the link below to reset password.\nthe link expire in 5 minutes\n{reset_link}"
-            
-            send_email("Password", email, msg, "User")
-            return {"detail":msg}
+            return {"detail":"it work"}
         
         if otp_['expire_at'] < datetime.now():
             raise HTTPException(

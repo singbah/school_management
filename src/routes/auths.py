@@ -22,7 +22,7 @@ MAIL_USE_TLS = bool(os.getenv("MAIL_USE_TLS")) if os.getenv("MAIL_USE_TLS") else
 MAIL_USE_SSL = bool(os.getenv("MAIL_USE_SSL")) if os.getenv("MAIL_USE_SSL") else False
 
 env = Environment(
-    loader=FileSystemLoader(os.path.join(os.getcwd(), "templates")),
+    loader=FileSystemLoader(os.path.join(os.getcwd(), "templates", 'emails')),
     autoescape=select_autoescape(["html", "xml"])
 )
 
