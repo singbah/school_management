@@ -82,6 +82,7 @@ async def student_login(login_data:StudentLogin, request:Request, response:Respo
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid credentials"
             )
+        
         await db.students.update_one({"student_id": login_data.student_id}, {"$set": {"failed_attempts": 0, "lockout_time": None, "last_login": now, "last_ip": ip}})
 
         token_data = {
@@ -133,7 +134,7 @@ async def get_current_user(request:Request):
         if not token:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Not authenticated"
+                detail="Authorization Error!!"
             )
         payload = verify_token(token)
         student_id = payload.get("student_id")
@@ -196,9 +197,12 @@ async def refresh_token(request:Request, response:Response):
             detail=str(e)
         )
 
-@user_auths_bp.patch("/update")
+@user_auths_bp.put("/update")
 async def update_student(student_data:dict, request:Request):
     try:
+        token = request.cookies.get("access_token")
+        student = verify_password(token)
+        
         student_id = student_data.get("student_id")
         db_user = await db.students.find_one({"student_id":student_id})
         if not db_user:
@@ -251,20 +255,20 @@ async def forgot_password(request:Request, email:str=Query(...)):
         
         reset_link = f'http://localhost:8000/user/password/reset?email={email}&&code={otp_code}'
         msg = f"click the link below to reset password.\nthe link expire in 5 minutes\n{reset_link}"
-        await send_email("Password Reset", email, msg, "User")
-        await db.OPTS.insert_one(OTPS)
+        # await send_email("Password Reset", email, msg, "User")
+        await db.OTPS.insert_one(OTPS)
 
-        return {"detail":"Check your email for the OTP CODE"}
+        return {"detail":msg}
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
 
-@user_auths_bp.patch("reset_password")
+@user_auths_bp.put("reset_password")
 async def check_otp(request:Request, response:Response, otp_code:str=Query(...), email:str=Query(...)):
     try:
-        cursor = db.OPTS.find({"email":email}).sort({"created_at":-1}).limit(1)
+        cursor = db.OTPS.find({"email":email}).sort({"created_at":-1}).limit(1)
         otps = []
         if not cursor:
             raise HTTPException(
@@ -276,7 +280,6 @@ async def check_otp(request:Request, response:Response, otp_code:str=Query(...),
 
         otp_ = otps[0]
 
-
         if otp_.get("code") != otp_code.strip():
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -284,7 +287,8 @@ async def check_otp(request:Request, response:Response, otp_code:str=Query(...),
             )
 
         if otp_.get("expire_at") > datetime.now() and otp_.get("code") == otp_code.strip():
-            return {"detail":"it work"}
+            await db.OTPS.delete_many({"email":email})
+            return {"detail":"user is login"}
         
         if otp_['expire_at'] < datetime.now():
             raise HTTPException(

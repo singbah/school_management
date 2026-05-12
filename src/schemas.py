@@ -1,5 +1,4 @@
 from pydantic import BaseModel, EmailStr
-from fastapi import Form, File, UploadFile
 
 
 class CreateStudent(BaseModel):
@@ -15,3 +14,4 @@ class CreateStudent(BaseModel):
 class StudentLogin(BaseModel):
     student_id: str
     password: str
+
