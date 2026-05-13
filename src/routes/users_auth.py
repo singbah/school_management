@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 import uuid
 
 from src.database import db
-from src.schemas import CreateStudent, StudentLogin
+from src.schemas import CreateStudent, UserLogin
 from src.routes.auths import set_password, verify_password, send_email
 from src.routes.config.security import create_token, verify_token, validate_phone
 
@@ -51,14 +51,14 @@ async def student_register(user:CreateStudent, request:Request, response:Respons
         )
 
 @user_auths_bp.post("/login")
-async def student_login(login_data:StudentLogin, request:Request, response:Response):
+async def student_login(login_data:UserLogin, request:Request, response:Response):
     print(login_data)
     try:
         now = datetime.now()
         ip = request.client.host
-        user = await db.students.find_one({"student_id": login_data.student_id})
+        user = await db.students.find_one({"student_id": login_data.user_id})
         if not user:
-            print("User not found with student_id:", login_data.student_id)
+            print("User not found with student_id:", login_data.user_id)
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="User not found"
@@ -92,7 +92,7 @@ async def student_login(login_data:StudentLogin, request:Request, response:Respo
         }
 
         access_token = create_token(token_data)
-        refresh_token = create_token(token_data, expires_delta=60*60*24*7)
+        refresh_token = create_token(token_data, expires_delta=60*24*7)
 
         response.set_cookie(
             key="access_token",
@@ -112,6 +112,7 @@ async def student_login(login_data:StudentLogin, request:Request, response:Respo
 
         user['_id'] = str(user["_id"])
         user['password'] = None
+
         return {'detail':user}
 
     except Exception as e:

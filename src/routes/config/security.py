@@ -10,7 +10,7 @@ load_dotenv()
 SECRET_KEY = os.getenv("SECRET_KEY", 'super_key')
 ALGORITHM = os.getenv("ALGORITHM", 'HS256')
 
-def create_token(data:dict, expires_delta=60*2):
+def create_token(data:dict, expires_delta=60*24):
     try:
         to_encode = data.copy()
         if expires_delta:

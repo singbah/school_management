@@ -11,7 +11,8 @@ class CreateStudent(BaseModel):
     phone:str
     password: str
 
-class StudentLogin(BaseModel):
-    student_id: str
+class UserLogin(BaseModel):
+    user_id: str
     password: str
+
 
