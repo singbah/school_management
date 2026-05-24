@@ -6,6 +6,8 @@ from passlib.context import CryptContext
 from fastapi_mail import FastMail, MessageSchema, ConnectionConfig
 from jinja2 import FileSystemLoader, Environment, select_autoescape
 
+from src.database import db
+
 load_dotenv()
 
 pwd_context = CryptContext(schemes=["argon2"])
@@ -35,6 +37,7 @@ mail_config = ConnectionConfig(
     MAIL_SSL_TLS=MAIL_USE_SSL,
     MAIL_STARTTLS=MAIL_USE_TLS
 )
+
 
 def set_password(password:str):
     if not password:

@@ -8,11 +8,8 @@ from bson import ObjectId
 from src.routes import all_bps
 from src.database import db 
 from src.routes.config.security import verify_token
+from src.routes.config.settings import USERUPLOAD_FOLDER, MAX_LEN, FILE_EXT
 
-USERUPLOAD_FOLDER = os.path.join(os.getcwd(), "static", "user_upload")
-FILE_EXT = ["image/jpeg", "image/jpg", "image/png"]
-MAX_LEN = 1024*1024*3
-os.makedirs(USERUPLOAD_FOLDER, exist_ok=True)
 
 app = FastAPI(title="School Management System", version="1.0.0")
 
@@ -25,12 +22,19 @@ app.add_middleware(
     allow_credentials=True
 )
 
+@app.get("/", status_code=200)
+def home():
+    return "hello world"
+
 @app.patch("/api/user/set-profile-pic")
 async def upgrade_profile_pic(request:Request, picture:UploadFile = File(...)):
-
     token = request.cookies.get("access_token")
     payload = verify_token(token)
-
+    if not payload:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
     if picture.content_type not in FILE_EXT:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -45,7 +49,7 @@ async def upgrade_profile_pic(request:Request, picture:UploadFile = File(...)):
         )
     
     ext = picture.filename.split(".").pop()
-    filename = f"{datetime.now().strftime('%d%m%y%H%M%S')}.{ext}"
+    filename = f"{datetime.now().strftime('%d%m%Y%H%M%S')}.{ext}"
     folder_dir = os.path.join(USERUPLOAD_FOLDER, "profile_pic")
     os.makedirs(folder_dir, exist_ok=True)
 
@@ -55,9 +59,9 @@ async def upgrade_profile_pic(request:Request, picture:UploadFile = File(...)):
     with open(photo_path, "wb") as pf:
         pf.write(content)
 
-    await db.students.update_one({"email":payload["email"]},{"$set":{"profile_pic":photo_url}})
+    await db.students.update_one({"email":payload["email"]},{"$set":{"profile_pic":photo_url, "updated_at":datetime.now()}})
 
-    return {"detail":str(picture.filename)}
+    return {"detail":"Profile Updated"}
 
 for bp in all_bps:
     app.include_router(bp)

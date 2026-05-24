@@ -185,3 +185,4 @@ async def forgot_password(request:Request, email:str=Query(...)):
             detail=str(e)
         )
 
+

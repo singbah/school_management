@@ -70,10 +70,10 @@ async def student_login(login_data:UserLogin, request:Request, response:Response
                 detail="Account is locked. Please try again later."
             )
         if not verify_password(login_data.password, user["password"]):
-            await db.students.update_one({"student_id": login_data.student_id}, {"$inc": {"failed_attempts": 1}})
+            await db.students.update_one({"student_id": login_data.user_id}, {"$inc": {"failed_attempts": 1}})
             if user["failed_attempts"] + 1 >= MAX_ATTEMPTS:
                 lockout_time = now + LOCKOUT_DURATION
-                await db.students.update_one({"student_id": login_data.student_id}, {"$set": {"lockout_time": lockout_time}})
+                await db.students.update_one({"student_id": login_data.user_id}, {"$set": {"lockout_time": lockout_time}})
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Account is locked due to too many failed login attempts. Please try again later."
@@ -83,7 +83,7 @@ async def student_login(login_data:UserLogin, request:Request, response:Response
                 detail="Invalid credentials"
             )
         
-        await db.students.update_one({"student_id": login_data.student_id}, {"$set": {"failed_attempts": 0, "lockout_time": None, "last_login": now, "last_ip": ip}})
+        await db.students.update_one({"student_id": login_data.user_id}, {"$set": {"failed_attempts": 0, "lockout_time": None, "last_login": now, "last_ip": ip}})
 
         token_data = {
             "student_id": user["student_id"],
@@ -202,7 +202,7 @@ async def refresh_token(request:Request, response:Response):
 async def update_student(student_data:dict, request:Request):
     try:
         token = request.cookies.get("access_token")
-        student = verify_password(token)
+        payload = verify_password(token)
         
         student_id = student_data.get("student_id")
         db_user = await db.students.find_one({"student_id":student_id})
