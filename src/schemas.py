@@ -15,4 +15,9 @@ class UserLogin(BaseModel):
     user_id: str
     password: str
 
-
+class CreateCourse(BaseModel):
+    course_name:str
+    schedule:list
+    grade_class:str
+    academy_year:str=None
+    room:str

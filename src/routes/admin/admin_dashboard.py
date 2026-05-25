@@ -1,7 +1,9 @@
-from fastapi import APIRouter, Request, Response, HTTPException, status, Query, routing
+from fastapi import APIRouter, Request, Response, HTTPException, status, Query
+from datetime import datetime, timedelta
 
 from src.database import db
 from src.routes.config.security import verify_token
+from src.schemas import CreateCourse
 
 admin_dashboard = APIRouter(prefix="/admin/dashboard")
 
@@ -126,6 +128,35 @@ async def get_courses(request:Request):
             courses.append(c)
         
         return {"courses":courses}
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+@admin_dashboard.post("/create_course")
+async def create_course(course_data:CreateCourse, request:Request):
+    try:
+        # payload = verify_token(request.cookies.get("access_token"))
+        # if not payload:
+        #     raise HTTPException(
+        #         status_code=status.HTTP_401_UNAUTHORIZED,
+        #         detail="you must be an admin"
+        #     )
+
+        new_course = course_data.dict()
+        now = datetime.now()
+        added_time = now+timedelta(days=31*9)
+        academy_year = f"{now.strftime('%Y')}-{added_time.strftime('%Y')}"
+        new_course['created_at'] = now
+        new_course['updated_at'] = now
+        new_course['created_by'] = "admin_id"
+        if not new_course.get('academy_year'):
+            new_course['academy_year'] = academy_year
+
+        await db.courses.insert_one(new_course)
+
+        return {"detail":"Course Register"}
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

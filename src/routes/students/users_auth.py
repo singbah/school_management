@@ -39,6 +39,7 @@ async def student_register(user:CreateStudent, request:Request, response:Respons
         user_dict["student_id"] = str(uuid.uuid4().int)[0:4]
         user_dict["failed_attempts"] = 0
         user_dict["lockout_time"] = None
+        
         await db.students.insert_one(user_dict)
 
         return {"message":"User registered successfully"}

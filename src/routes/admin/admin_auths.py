@@ -21,7 +21,7 @@ async def login(admin_log:UserLogin, request:Request, response:Response):
         password = admin_log.password
         now = datetime.now()
 
-        admin = await db.admins.find_one({"_id": admin_id})
+        admin = await db.students.find_one({"_id": admin_id})
         if not admin:
             print("Admin not found with admin_id:", admin_id)
             raise HTTPException(
