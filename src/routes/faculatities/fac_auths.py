@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 import uuid
 
 from src.database import db
-from src.schemas import CreateStudent, UserLogin
+from src.schemas import CreateFacultity, UserLogin
 from src.routes.auths import set_password, verify_password, send_email
 from src.routes.config.security import create_token, verify_token, validate_phone
 
@@ -12,16 +12,25 @@ load_dotenv()
 MAX_ATTEMPTS = 5
 LOCKOUT_DURATION = timedelta(minutes=5)
 
-user_auths_bp = APIRouter(prefix="/api/user/auths")
+facal_auths_bp = APIRouter(prefix="/api/facultities/auths")
 
-@user_auths_bp.post("/register")
-async def student_register(user:CreateStudent, request:Request, response:Response):
+@facal_auths_bp.post("/register")
+async def register(user:CreateFacultity, request:Request, response:Response):
     try:
+        token = request.cookies
+        payload = verify_token(token.get("access_token"))
+        if not token or payload.get("role") != 'admin':
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Unauthorized to access service"
+            )
+
+
         now = datetime.now()
         if user.phone:
             validate_phone(user.phone)
 
-        existing_user = await db.students.find_one({"$or":[{"email":user.email}, {"phone":user.phone}]})
+        existing_user = await db.facultities.find_one({"$or":[{"email":user.email}, {"phone":user.phone}]})
 
         if existing_user:
             print("User already exists with email or phone:", user.email, user.phone)
@@ -36,12 +45,13 @@ async def student_register(user:CreateStudent, request:Request, response:Respons
         user_dict["password"] = hashed_password
         user_dict["created_at"] = now
         user_dict["updated_at"] = now
-        user_dict["student_id"] = str(uuid.uuid4().int)[0:4]
+        user_dict["staff_id"] = str(uuid.uuid4().int)[0:4]
         user_dict["failed_attempts"] = 0
         user_dict["lockout_time"] = None
-        user_dict["role"] = "student"
+        user_dict["role"] = "staff"
+        user_dict["register_by"] = payload.get("user_id")
         
-        await db.students.insert_one(user_dict)
+        await db.facultities.insert_one(user_dict)
 
         return {"message":"User registered successfully"}
     
@@ -52,15 +62,15 @@ async def student_register(user:CreateStudent, request:Request, response:Respons
             detail=str(e)
         )
 
-@user_auths_bp.post("/login")
+@facal_auths_bp.post("/login")
 async def student_login(login_data:UserLogin, request:Request, response:Response):
     print(login_data)
     try:
         now = datetime.now()
         ip = request.client.host
-        user = await db.students.find_one({"student_id": login_data.user_id})
+        user = await db.facultities.find_one({"staff_id": login_data.user_id})
         if not user:
-            print("User not found with student_id:", login_data.user_id)
+            print("User not found with ID#:", login_data.user_id)
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="User not found"
@@ -75,7 +85,7 @@ async def student_login(login_data:UserLogin, request:Request, response:Response
             await db.students.update_one({"student_id": login_data.user_id}, {"$inc": {"failed_attempts": 1}})
             if user["failed_attempts"] + 1 >= MAX_ATTEMPTS:
                 lockout_time = now + LOCKOUT_DURATION
-                await db.students.update_one({"student_id": login_data.user_id}, {"$set": {"lockout_time": lockout_time}})
+                await db.facultities.update_one({"staff_id": login_data.user_id}, {"$set": {"lockout_time": lockout_time}})
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Account is locked due to too many failed login attempts. Please try again later."
@@ -85,12 +95,12 @@ async def student_login(login_data:UserLogin, request:Request, response:Response
                 detail="Invalid credentials"
             )
         
-        await db.students.update_one({"student_id": login_data.user_id}, {"$set": {"failed_attempts": 0, "lockout_time": None, "last_login": now, "last_ip": ip}})
+        await db.students.update_one({"staff_id": login_data.user_id}, {"$set": {"failed_attempts": 0, "lockout_time": None, "last_login": now, "last_ip": ip}})
 
         token_data = {
-            "user_id": user["student_id"],
+            "user_id": user["staff_id"],
             "email": user["email"],
-            'role': 'student'
+            'role': 'staff'
         }
 
         access_token = create_token(token_data)
@@ -124,13 +134,7 @@ async def student_login(login_data:UserLogin, request:Request, response:Response
             detail=str(e)
         )
 
-@user_auths_bp.post("/logout")
-async def student_logout(response:Response):
-    response.delete_cookie("access_token")
-    response.delete_cookie("refresh_token")
-    return {"message":"Logged out successfully"}
-
-@user_auths_bp.get("/me")
+@facal_auths_bp.get("/me")
 async def get_current_user(request:Request):
     try:
         token = request.cookies.get("access_token")
@@ -141,7 +145,7 @@ async def get_current_user(request:Request):
             )
         payload = verify_token(token)
         student_id = payload.get("user_id")
-        user = await db.students.find_one({"student_id": student_id})
+        user = await db.facultities.find_one({"staff_id": student_id})
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -157,7 +161,7 @@ async def get_current_user(request:Request):
             detail=str(e)
         )
 
-@user_auths_bp.post("/refresh")
+@facal_auths_bp.post("/refresh")
 async def refresh_token(request:Request, response:Response):
     try:
         refresh_token = request.cookies.get("refresh_token")
@@ -167,9 +171,9 @@ async def refresh_token(request:Request, response:Response):
                 detail="Refresh token missing"
             )
         payload = verify_token(refresh_token)
-        student_id = payload.get("user_id")
+        staff_id = payload.get("user_id")
         
-        user = await db.students.find_one({"student_id": student_id})
+        user = await db.facultities.find_one({"staff_id": staff_id})
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -177,7 +181,7 @@ async def refresh_token(request:Request, response:Response):
             )
         
         token_data = {
-            "user_id": user["student_id"],
+            "user_id": user["staff_id"],
             "email": user["email"],
             'role': user['role']
         }
@@ -201,36 +205,7 @@ async def refresh_token(request:Request, response:Response):
             detail=str(e)
         )
 
-@user_auths_bp.put("/update")
-async def update_student(student_data:dict, request:Request):
-    try:
-        token = request.cookies.get("access_token")
-        payload = verify_password(token)
-        
-        student_id = student_data.get("student_id")
-        db_user = await db.students.find_one({"student_id":student_id})
-        if not db_user:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="user not found"
-            )
-        data_to_update = {}
-        db_user["_id"] = str(db_user["_id"])
-        for key, value in student_data.items():
-            if key in db_user.keys():
-                db_user[key] = value
-                data_to_update[key] = value
-
-        await db.students.update_one({"student_id":student_id},{"$set":data_to_update})
-
-        return {"detail":db_user}
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
-
-@user_auths_bp.post("/forgot-password")
+@facal_auths_bp.post("/forgot-password")
 async def forgot_password(request:Request, email:str=Query(...)):
     try:
         if not email:
@@ -238,7 +213,7 @@ async def forgot_password(request:Request, email:str=Query(...)):
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="you didn't enter your email"
             )
-        user = await db.students.find_one({"email": email})
+        user = await db.facultities.find_one({"email": email})
         otp_code =uuid.uuid4().hex[0:6]
         now = datetime.now()
         ip = request.headers.get("host")
@@ -269,7 +244,7 @@ async def forgot_password(request:Request, email:str=Query(...)):
             detail=str(e)
         )
 
-@user_auths_bp.put("reset_password")
+@facal_auths_bp.put("/reset-password")
 async def check_otp(request:Request, response:Response, otp_code:str=Query(...), email:str=Query(...)):
     try:
         cursor = db.OTPS.find({"email":email}).sort({"created_at":-1}).limit(1)

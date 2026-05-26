@@ -15,63 +15,74 @@ LOCKOUT_DURATION = timedelta(minutes=5)
 admin_auths = APIRouter(prefix="/admin/auths")
 
 @admin_auths.post("/login")
-async def login(admin_log:UserLogin, request:Request, response:Response):
+async def login(login_data:UserLogin, request:Request, response:Response):
+    print(login_data)
     try:
-        admin_id = admin_log.user_id
-        password = admin_log.password
         now = datetime.now()
-
-        admin = await db.students.find_one({"_id": admin_id})
-        if not admin:
-            print("Admin not found with admin_id:", admin_id)
+        ip = request.client.host
+        user = await db.admins.find_one({"admin_id": login_data.user_id})
+        if not user:
+            print("User not found with student_id:", login_data.user_id)
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Admin not found"
+                detail="User not found"
             )
-        if admin.get("lockout_time") and now < admin["lockout_time"]:
-            remaining_lockout = (admin["lockout_time"] - now).seconds // 60
+        
+        if user.get("lockout_time") and now < user["lockout_time"]:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Account locked. Try again in {remaining_lockout} minutes."
+                detail="Account is locked. Please try again later."
             )
-        if not verify_password(password, admin["password"]):
-            failed_attempts = admin.get("failed_attempts", 0) + 1
-            update_data = {"failed_attempts": failed_attempts}
-            if failed_attempts >= MAX_FAILED_ATTEMPTS:
-                update_data["lockout_time"] = now + LOCKOUT_DURATION
-            await db.admins.update_one({"_id": admin_id}, {"$set": update_data})
+        if not verify_password(login_data.password, user["password"]):
+            await db.admins.update_one({"admin_id": login_data.user_id}, {"$inc": {"failed_attempts": 1}})
+            if user["failed_attempts"] + 1 >= MAX_FAILED_ATTEMPTS:
+                lockout_time = now + LOCKOUT_DURATION
+                await db.admins.update_one({"admin_id": login_data.user_id}, {"$set": {"lockout_time": lockout_time}})
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Account is locked due to too many failed login attempts. Please try again later."
+                )
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid credentials"
             )
         
-        await db.admins.update_one({"_id", admin.get("_id")},{"$set":{"failed_attempts":0, "lockout_time":None}, "last_login":now})
+        await db.admins.update_one({"admin_id": login_data.user_id}, {"$set": {"failed_attempts": 0, "lockout_time": None, "last_login": now, "last_ip": ip}})
 
-        user_data = {"user_id":admin.get("_id"), "role":"admin", "email":admin.get("email")}
-        access_token = create_token(user_data, 60*24*7)
-        refresh_token = create_token(user_data, 60*24*30)
+        token_data = {
+            "user_id": user["admin_id"],
+            "email": user["email"],
+            'role': user['role']
+        }
+
+        access_token = create_token(token_data)
+        refresh_token = create_token(token_data, expires_delta=60*24*7)
 
         response.set_cookie(
             key="access_token",
             value=access_token,
+            httponly=True,
             secure=True,
-            samesite="None",
-            httponly=True
-            )
-        
+            samesite="none",
+        )
+    
         response.set_cookie(
             key="refresh_token",
             value=refresh_token,
+            httponly=True,
             secure=True,
-            samesite="None",
-            httponly=True
-            )
-        
-        admin['_id'] = str(admin['_id'])
-        return {'detail':admin}
+            samesite="none",
+        )
+
+        user['_id'] = str(user["_id"])
+        user['password'] = None
+
+        return {'detail':user}
+
     except Exception as e:
+        print("Error during login:", str(e))
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=status.HTTP_400_BAD_REQUEST, 
             detail=str(e)
         )
 
@@ -86,7 +97,7 @@ async def get_admin(request:Request):
                 detail="unauthorized attempt"
             )
         
-        admin = await db.admins.find_one({"_id",ObjectId(payload.get("user_id")) })
+        admin = await db.admins.find_one({"admin_id":payload.get("user_id") })
 
         if not admin:
             raise HTTPException(
@@ -100,14 +111,6 @@ async def get_admin(request:Request):
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
-
-
-@admin_auths.post("/logout")
-async def student_logout(response:Response):
-    response.delete_cookie("access_token")
-    response.delete_cookie("refresh_token")
-    return {"message":"Logged out successfully"}
-
 
 @admin_auths.post("/refresh")
 async def refresh_token(request:Request, response:Response):

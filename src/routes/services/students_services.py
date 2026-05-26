@@ -2,11 +2,35 @@ from fastapi import APIRouter, HTTPException, Request, Response, status, Form, F
 from datetime import datetime, timedelta
 import os
 from bson import ObjectId
+from functools import wraps
 
 from src.database import db
 from src.routes.config.security import create_token
 from src.routes.config.settings import USERUPLOAD_FOLDER, MAX_LEN, FILE_EXT
 from src.schemas import UserLogin
+from src.routes.config.security import verify_token
+
+def is_student(func):
+    @wraps(func)
+    def decorator(request, *args, **kwargs):
+        token = request.cookies
+        if not token:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="you are not allow to perform this action unless you login"
+            )
+
+        payload = verify_token(request.cookies.get("access_token"))
+        if not payload:
+            print("you are not allow to perform this action unless you login")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="you are not allow to perform this action unless you login"
+            )
+        return func(request, *args, **kwargs)
+    return decorator
+
+
 
 student_records = APIRouter(prefix="/api/students/record")
 
@@ -69,6 +93,13 @@ async def update_student(request:Request, student_id:str,transcript:UploadFile=F
 @student_records.post("/add_courses")
 async def add_cources(course_data:dict, request:Request):
     try:
+        payload = verify_token(request.cookies.get("access_token"))
+        if not payload:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="not authorized"
+            )
+        print(payload)
         student = await db.students.find_one({"student_id":course_data.get("student_id")})
         course = await db.courses.find_one({"_id":ObjectId(course_data.get("course_id"))})
         existing_course = await db.student_courses.find_one({"course_id":course_data.get("course_id"),"student_id":course_data.get("student_id")})
@@ -104,7 +135,8 @@ async def add_cources(course_data:dict, request:Request):
         course_data.update({
             "created_at":now, 
             "updated_at":now,
-            "added_by":student["last_name"],
+            "added_by":payload['user_id'],
+            "course_name":course['course_name'],
             "academy_year":f"{now.strftime('%Y')}-{now_year.strftime('%Y')}"
             })
         
@@ -119,7 +151,6 @@ async def add_cources(course_data:dict, request:Request):
 
 @student_records.delete("/drop_course")
 async def drop_course(data:dict, request:Request):
-    print(request)
     try:
         now = datetime.now()
         next_year = now+timedelta(days=31*9)
@@ -147,3 +178,34 @@ async def drop_course(data:dict, request:Request):
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
+
+@student_records.get("/student-courses")
+async def get_student_courses(request:Request):
+    try:
+        all_courses =[]
+        now = datetime.now()
+        next_year = now+timedelta(days=31*9)
+        academy_year = f"{now.strftime('%Y')}-{next_year.strftime('%Y')}"
+        payload = verify_token(request.cookies.get("access_token"))
+        
+        cursor = db.student_courses.find({"student_id":payload.get("user_id"),"academy_year":academy_year}).sort("created_at", -1)
+
+        if not cursor:
+            print('cursor not found!!')
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, 
+                detail='cursor not found!!'
+            )
+
+        async for c in cursor:
+            c["_id"] =str(c["_id"])
+            all_courses.append(c)
+        
+        print(len(all_courses))
+        return all_courses
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    
