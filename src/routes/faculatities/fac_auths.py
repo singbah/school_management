@@ -25,7 +25,6 @@ async def register(user:CreateFacultity, request:Request, response:Response):
                 detail="Unauthorized to access service"
             )
 
-
         now = datetime.now()
         if user.phone:
             validate_phone(user.phone)

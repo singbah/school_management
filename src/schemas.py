@@ -1,4 +1,5 @@
 from pydantic import BaseModel, EmailStr
+from datetime import datetime, timedelta
 
 
 class CreateStudent(BaseModel):
@@ -12,6 +13,7 @@ class CreateStudent(BaseModel):
     password: str
 
 class CreateFacultity(BaseModel):
+    created_at:str=datetime.now()
     first_name: str
     last_name: str 
     email: EmailStr

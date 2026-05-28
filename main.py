@@ -26,6 +26,7 @@ app.add_middleware(
 def home():
     return "hello world"
 
+
 @app.patch("/api/user/set-profile-pic")
 async def upgrade_profile_pic(request:Request, picture:UploadFile = File(...)):
     token = request.cookies.get("access_token")
@@ -63,5 +64,15 @@ async def upgrade_profile_pic(request:Request, picture:UploadFile = File(...)):
 
     return {"detail":"Profile Updated"}
 
+@app.get("/download_file")
+async def download_file(filename:str=USERUPLOAD_FOLDER):
+    try:
+        download = os.path.join(filename)
+        if os.path.exists(download):
+            print("The file exist in the direcroty")
+            return FileResponse(filename)
+    except Exception as e:
+        return str(e)
+    
 for bp in all_bps:
     app.include_router(bp)
