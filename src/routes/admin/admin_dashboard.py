@@ -214,7 +214,9 @@ async def assign_course(request:Request, staff_id:str, course_id:str):
             )
         
         for c in staff["assigned_courses"]:
-            if c['course_id'] == course_id:
+            if not c['course_id']:
+                continue
+            elif c['course_id'] == course_id:
                 print("Course aready added")
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,

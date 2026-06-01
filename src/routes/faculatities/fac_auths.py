@@ -47,8 +47,9 @@ async def register(user:CreateFacultity, request:Request, response:Response):
         user_dict["staff_id"] = str(uuid.uuid4().int)[0:4]
         user_dict["failed_attempts"] = 0
         user_dict["lockout_time"] = None
-        user_dict["role"] = "staff"
         user_dict["register_by"] = payload.get("user_id")
+        user_dict["role"] = "staff"
+        user_dict["assigned_courser"] = []
         
         await db.facultities.insert_one(user_dict)
 
@@ -62,7 +63,7 @@ async def register(user:CreateFacultity, request:Request, response:Response):
         )
 
 @facal_auths_bp.post("/login")
-async def student_login(login_data:UserLogin, request:Request, response:Response):
+async def login(login_data:UserLogin, request:Request, response:Response):
     print(login_data)
     try:
         now = datetime.now()
@@ -81,7 +82,7 @@ async def student_login(login_data:UserLogin, request:Request, response:Response
                 detail="Account is locked. Please try again later."
             )
         if not verify_password(login_data.password, user["password"]):
-            await db.students.update_one({"student_id": login_data.user_id}, {"$inc": {"failed_attempts": 1}})
+            await db.facultities.update_one({"staff_id": login_data.user_id}, {"$inc": {"failed_attempts": 1}})
             if user["failed_attempts"] + 1 >= MAX_ATTEMPTS:
                 lockout_time = now + LOCKOUT_DURATION
                 await db.facultities.update_one({"staff_id": login_data.user_id}, {"$set": {"lockout_time": lockout_time}})
@@ -94,7 +95,7 @@ async def student_login(login_data:UserLogin, request:Request, response:Response
                 detail="Invalid credentials"
             )
         
-        await db.students.update_one({"staff_id": login_data.user_id}, {"$set": {"failed_attempts": 0, "lockout_time": None, "last_login": now, "last_ip": ip}})
+        await db.facultities.update_one({"staff_id": login_data.user_id}, {"$set": {"failed_attempts": 0, "lockout_time": None, "last_login": now, "last_ip": ip}})
 
         token_data = {
             "user_id": user["staff_id"],

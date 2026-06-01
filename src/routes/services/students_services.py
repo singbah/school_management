@@ -136,6 +136,7 @@ async def add_cources(course_data:dict, request:Request):
             "created_at":now, 
             "updated_at":now,
             "added_by":payload['user_id'],
+            "student_name":f'{student["first_name"]} {student["last_name"]}',
             "course_name":course['course_name'],
             "academy_year":f"{now.strftime('%Y')}-{now_year.strftime('%Y')}"
             })
